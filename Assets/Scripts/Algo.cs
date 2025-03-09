@@ -1,6 +1,4 @@
-using UnityEditor.Experimental.GraphView;
 using UnityEngine;
-using static Unity.Collections.AllocatorManager;
 
 public class Algo : MonoBehaviour
 {
@@ -44,7 +42,6 @@ public class Algo : MonoBehaviour
            mapp[x, y, z] && reach[x, y, z] == 0)
         {
             ++counter_dfs;
-            Debug.Log($"{x} {y} {z} {counter_dfs}");
             reach[x, y, z] = counter_dfs;
             if (dir1 != -1)
                 dfs(x + 1, y, z, 1, dir2, dir3);
