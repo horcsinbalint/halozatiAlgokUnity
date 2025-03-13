@@ -16,4 +16,13 @@ public class Rotator : MonoBehaviour
     {
         transform.rotation = Quaternion.Euler(0, Time.fixedTime * speed, 0);
     }
+    Bounds GetMaxBounds(MonoBehaviour g)
+    {
+        var b = new Bounds(g.transform.position, Vector3.zero);
+        foreach (Renderer r in g.GetComponentsInChildren<Renderer>())
+        {
+            b.Encapsulate(r.bounds);
+        }
+        return b;
+    }
 }

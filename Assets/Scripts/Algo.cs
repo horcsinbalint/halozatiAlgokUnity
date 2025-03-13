@@ -2,9 +2,10 @@ using System.Collections.Generic;
 using System.IO;
 using UnityEngine;
 using System.Text.Json;
-using UnityEngine.Rendering;
-using UnityEngine.WSA;
 using UnityEngine.Assertions;
+using System;
+using UnityEngine.UI;
+using TMPro;
 
 public enum CellState
 {
@@ -71,13 +72,10 @@ public class Robot
 
     public List<Vector3Int> GetCompatibleDirs(Vector3Int dir) {
         List<Vector3Int> resi = new List<Vector3Int>();
-        Vector3Int v3 = dir;
-        v3 = sucDir(v3);
-        resi.Add(v3);
-        resi.Add(v3 * -1);
-        v3 = sucDir(v3);
-        resi.Add(v3);
-        resi.Add(v3 * -1);
+        resi.Add(sucDir(dir));
+        resi.Add(sucDir(sucDir(dir)));
+        resi.Add(sucDir(sucDir(sucDir(sucDir(dir)))));
+        resi.Add(sucDir(sucDir(sucDir(sucDir(sucDir(dir))))));
         return resi;
     }
 
@@ -199,7 +197,7 @@ public class Robot
                             getRelative(new Vector3Int(i, j, 0)) != CellState.WALL &&
                             getRelative(new Vector3Int(0, j, k)) != CellState.WALL &&
                             getRelative(new Vector3Int(i, 0, k)) != CellState.WALL &&
-                            getRelative(new Vector3Int(-i,-j,-k)) == CellState.WALL)
+                            getRelative(new Vector3Int(i,j,k)) == CellState.WALL)
                         {
                             can_settle = false;
                         }
@@ -215,11 +213,6 @@ public class Robot
         if (getRelative(dir) == CellState.FREE)
         {
             setNextMoveDir(dir);
-            return;
-        }
-        if (getRelative(sucDir(dir)) == CellState.FREE)
-        {
-            setNextMoveDir(sucDir(dir));
             return;
         }
         foreach (var d in GetCompatibleDirs(last_move))
@@ -319,10 +312,10 @@ public class Algo : MonoBehaviour
     public Material moving;
     public Material settled;
     public Material start;
-    public int width = 5;
-    public int height = 5;
-    public int depth = 5;
-    public GameObject[,,] gameObjects;
+    int width = 5;
+    int height = 5;
+    int depth = 5;
+    GameObject[,,] gameObjects;
     public string json_file_path;
 
     private bool[,,] map;
@@ -330,26 +323,63 @@ public class Algo : MonoBehaviour
     int counter_dfs = 0;
     public int ticks_per_update = 50;
 
-    public int time = 0;
-    public int ticks_since_last_update = 0;
+    int time = 0;
+    int ticks_since_last_update = 0;
 
     private int start_x = 2, start_y = 2, start_z = 2;
     JsonElement re;
 
-    // Start is called once before the first execution of Update after the MonoBehaviour is created
-    void Start()
+    void DropdownValueChanged(TMPro.TMP_Dropdown dropdown)
     {
-        using (StreamReader r = new StreamReader(json_file_path))
+        for (int x = 0; x < height; ++x)
         {
-            string json = r.ReadToEnd();
-            JsonDocument jd = JsonDocument.Parse(json);
-            re = jd.RootElement;
+            for (int y = 0; y < width; ++y)
+            {
+                for (int z = 0; z < depth; ++z)
+                {
+                    if (map[x, y, z])
+                    {
+                        Destroy(gameObjects[x, y, z]);
+                    }
+                }
+            }
         }
+        Debug.Log(dropdown.value.ToString());
+        string json = "";
+        switch (dropdown.value)
+        {
+            case 0:
+                json = PreppedMaps.mapOne();
+                break;
+            case 1:
+                using (StreamReader r = new StreamReader(json_file_path))
+                {
+                    json = r.ReadToEnd();
+                }
+                break;
+            case 2:
+                json = PreppedMaps.mapTwo();
+                break;
+        }
+        loadJson(json);
+    }
+
+    void loadJson(string json)
+    {
+        JsonDocument jd = JsonDocument.Parse(json);
+        re = jd.RootElement;
         height = re.GetProperty("map").GetArrayLength();
         width = re.GetProperty("map")[0].GetArrayLength();
         depth = re.GetProperty("map")[0][0].GetArrayLength();
         gameObjects = new GameObject[height, width, depth];
         map = new bool[height, width, depth];
+
+        int minx = int.MaxValue;
+        int maxx = int.MinValue;
+        int miny = int.MaxValue;
+        int maxy = int.MinValue;
+        int minz = int.MaxValue;
+        int maxz = int.MinValue;
         for (int x = 0; x < height; ++x)
         {
             for (int y = 0; y < width; ++y)
@@ -358,6 +388,12 @@ public class Algo : MonoBehaviour
                 {
                     if (re.GetProperty("map")[x][y][z].GetBoolean())
                     {
+                        minx = Math.Min(minx, x);
+                        maxx = Math.Max(maxx, x);
+                        miny = Math.Min(miny, y);
+                        maxy = Math.Max(maxy, y);
+                        minz = Math.Min(minz, z);
+                        maxz = Math.Max(maxz, z);
                         map[x, y, z] = true;
                         gameObjects[x, y, z] = Instantiate(cube);
                         gameObjects[x, y, z].transform.parent = transform;
@@ -366,11 +402,48 @@ public class Algo : MonoBehaviour
                 }
             }
         }
+        Vector3Int egyik = new Vector3Int(minx, miny, minz);
+        Vector3Int masik = new Vector3Int(maxx, maxy, maxz);
+        transform.SetLocalPositionAndRotation(-egyik - masik / 2 + egyik / 2, Quaternion.identity);
         start_x = re.GetProperty("start").GetProperty("x").GetInt32();
         start_y = re.GetProperty("start").GetProperty("y").GetInt32();
         start_z = re.GetProperty("start").GetProperty("z").GetInt32();
         r = new List<Robot>();
         GenerateRobotField();
+    }
+
+
+    // Start is called once before the first execution of Update after the MonoBehaviour is created
+    void Start()
+    {
+        
+        GameObject dropdown = GameObject.Find("MapSelection");
+        Debug.Log(dropdown);
+
+        TMPro.TMP_Dropdown dropdown2 = dropdown.GetComponent<TMPro.TMP_Dropdown>();
+        
+        Debug.Log(dropdown2);
+        dropdown2.onValueChanged.AddListener(delegate {
+            DropdownValueChanged(dropdown2);
+        });
+
+        try
+        {
+            string json;
+            using (StreamReader r = new StreamReader(json_file_path))
+            {
+                json = r.ReadToEnd();
+            }
+            loadJson(json);
+        } catch(Exception ex)
+        {
+            height = 0;
+            width = 0;
+            depth = 0;
+            r = new List<Robot>();
+            gameObjects = new GameObject[height, width, depth];
+            map = new bool[height, width, depth];
+        }
     }
 
     // Update is called once per frame
@@ -380,7 +453,7 @@ public class Algo : MonoBehaviour
     }
     void FixedUpdate()
     {
-        if (ticks_since_last_update >= ticks_per_update)
+        if (ticks_since_last_update >= GameObject.Find("Speed slider").GetComponent<Slider>().value)
         {
             foreach (Robot robot in r)
             {
