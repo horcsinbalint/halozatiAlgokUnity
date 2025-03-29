@@ -6,6 +6,8 @@ using UnityEngine.Assertions;
 using System;
 using UnityEngine.UI;
 using TMPro;
+using UnityEngine.UIElements;
+using System.Linq;
 
 public enum CellState
 {
@@ -16,10 +18,13 @@ public enum CellState
 
 public class Robot
 {
-    public int x, y, z;
+    public Vector3Int position;
+    public Vector3Int target;
     private Vector3Int dir = new Vector3Int(1, 0, 0);
+    private Vector3Int? secondary_dir = null;
     bool ever_moved = false;
     private Vector3Int last_move;
+    private int active_for = 0;
 
     private Vector3Int[] all_directions()
     {
@@ -45,14 +50,10 @@ public class Robot
     }
 
 
-    public Robot(int x, int y, int z)
+    public Robot(Vector3Int position)
     {
-        this.x = x;
-        this.y = y;
-        this.z = z;
-        x_target = x;
-        y_target = y;
-        z_target = z;
+        this.position = position;
+        target = position;
     }
 
     List<List<List<CellState>>> neighbours_tmp;
@@ -64,26 +65,26 @@ public class Robot
 
     private void setNextMoveDir(Vector3Int rel_coords)
     {
-        x_target = x + rel_coords.x;
-        y_target = y + rel_coords.y;
-        z_target = z + rel_coords.z;
+        target = position + rel_coords;
         last_move = rel_coords;
     }
 
     public List<Vector3Int> GetCompatibleDirs(Vector3Int dir) {
-        List<Vector3Int> resi = new List<Vector3Int>();
-        resi.Add(sucDir(dir));
-        resi.Add(sucDir(sucDir(dir)));
-        resi.Add(sucDir(sucDir(sucDir(sucDir(dir)))));
-        resi.Add(sucDir(sucDir(sucDir(sucDir(sucDir(dir))))));
+        List<Vector3Int> resi = new List<Vector3Int>
+        {
+            sucDir(dir),
+            sucDir(sucDir(dir)),
+            sucDir(sucDir(sucDir(sucDir(dir)))),
+            sucDir(sucDir(sucDir(sucDir(sucDir(dir)))))
+        };
         return resi;
     }
 
-    private bool reachable(int x1, int y1, int z1, int x2, int y2, int z2, List<List<List<CellState>>> neigh)
+    private bool reachable(Vector3Int from, Vector3Int to, List<List<List<CellState>>> neigh)
     {
-        if (neigh[x1][y1][z1] == CellState.WALL || neigh[x2][y2][z2] == CellState.WALL) return false;
+        if (neigh[from.x][from.y][from.z] == CellState.WALL || neigh[to.x][to.y][to.z] == CellState.WALL) return false;
         bool[,,] reach = new bool[neigh.Count, neigh[0].Count, neigh[0][0].Count];
-        reach[x1, y1, z1] = true;
+        reach[from.x, from.y, from.z] = true;
         bool change = false;
         do
         {
@@ -116,11 +117,12 @@ public class Robot
                 }
             }
         } while (change);
-        return reach[x2, y2, z2];
+        return reach[to.x, to.y, to.z];
     }
 
-    public void LookCompute(List<List<List<CellState>>> neighbours)
+    public void LookCompute(List<List<List<CellState>>> neighbours, int tav)
     {
+        active_for++;
         neighbours_tmp = neighbours;
         bool block_all = true;
         foreach (var dir in all_directions())
@@ -148,11 +150,15 @@ public class Robot
                 dir = sucDir(dir);
             }
         }
-        int sarok_count_neighbs = (getRelative(new Vector3Int(1, 0, 0)) == CellState.WALL || getRelative(new Vector3Int(-1, 0, 0)) == CellState.WALL ? 1 : 0) +
-            (getRelative(new Vector3Int(0, 1, 0)) == CellState.WALL || getRelative(new Vector3Int(0, -1, 0)) == CellState.WALL ? 1 : 0) +
-            (getRelative(new Vector3Int(0, 0, 1)) == CellState.WALL || getRelative(new Vector3Int(0, 0, -1)) == CellState.WALL ? 1 : 0);
+
+        int sarok_count_neighbs = (getRelative(Vector3Int.up) == CellState.WALL || getRelative(Vector3Int.down) == CellState.WALL ? 1 : 0) +
+            (getRelative(Vector3Int.left) == CellState.WALL || getRelative(Vector3Int.right) == CellState.WALL ? 1 : 0) +
+            (getRelative(Vector3Int.back) == CellState.WALL || getRelative(Vector3Int.forward) == CellState.WALL ? 1 : 0);
         //Debug.Log($"sarok_count_neighbs for {x} {y} {z}: {sarok_count_neighbs}");
-        if (sarok_count_neighbs == 3)
+        if (sarok_count_neighbs == 3 &&
+            (getRelative(Vector3Int.up) == CellState.WALL ? 1 : 0) + (getRelative(Vector3Int.down) == CellState.WALL ? 1 : 0) +
+            (getRelative(Vector3Int.left) == CellState.WALL ? 1 : 0) + (getRelative(Vector3Int.right) == CellState.WALL ? 1 : 0) +
+            (getRelative(Vector3Int.back) == CellState.WALL ? 1 : 0) + (getRelative(Vector3Int.forward) == CellState.WALL ? 1 : 0) >= 4)
         {
             bool can_settle = true;
             //Trying to settle
@@ -170,9 +176,9 @@ public class Robot
                                 {
                                     if (i == 1 && j == 1 && k == 1) continue;
                                     if (i2 == 1 && j2 == 1 && k2 == 1) continue;
-                                    bool can_traverse_now = reachable(i, j, k, i2, j2, k2, neighbours);
+                                    bool can_traverse_now = reachable(new Vector3Int(i, j, k), new Vector3Int(i2, j2, k2), neighbours);
                                     neighbours[1][1][1] = CellState.WALL;
-                                    bool can_traverse_later = reachable(i, j, k, i2, j2, k2, neighbours);
+                                    bool can_traverse_later = reachable(new Vector3Int(i, j, k), new Vector3Int(i2, j2, k2), neighbours);
                                     neighbours[1][1][1] = CellState.OCCUPIED;
                                     if(can_traverse_now && ! can_traverse_later)
                                     {
@@ -185,27 +191,10 @@ public class Robot
                     }
                 }
             }
-            for(int i = -1; i <= 1; i += 2)
-            {
-                for (int j = -1; j <= 1; j += 2)
-                {
-                    for (int k = -1; k <= 1; k += 2)
-                    {
-                        if(getRelative(new Vector3Int(i, 0, 0)) != CellState.WALL &&
-                            getRelative(new Vector3Int(0, j, 0)) != CellState.WALL &&
-                            getRelative(new Vector3Int(0, 0, k)) != CellState.WALL &&
-                            getRelative(new Vector3Int(i, j, 0)) != CellState.WALL &&
-                            getRelative(new Vector3Int(0, j, k)) != CellState.WALL &&
-                            getRelative(new Vector3Int(i, 0, k)) != CellState.WALL &&
-                            getRelative(new Vector3Int(i,j,k)) == CellState.WALL)
-                        {
-                            can_settle = false;
-                        }
-                    }
-                }
-            }
             if (can_settle)
             {
+                if(active_for != tav+1)
+                    Debug.LogError($"Settling at: {position} after {active_for} ticks of being active. The cell is {tav} blocks from the start.");
                 active = false;
                 return;
             }
@@ -215,12 +204,44 @@ public class Robot
             setNextMoveDir(dir);
             return;
         }
+        if(secondary_dir != null)
+        {
+            if (getRelative((Vector3Int)secondary_dir) == CellState.FREE)
+            {
+                setNextMoveDir((Vector3Int)secondary_dir);
+                return;
+            } else
+            {
+                foreach (var d in GetCompatibleDirs(last_move))
+                {
+                    if (d * secondary_dir == Vector3Int.zero && d * dir == Vector3Int.zero && getRelative(d) == CellState.FREE)
+                    {
+                        secondary_dir = null;
+                        dir = d;
+                        setNextMoveDir((Vector3Int)dir);
+                        return;
+                    }
+                }
+            }
+        } else
+        {
+            foreach (var d in GetCompatibleDirs(dir))
+            {
+                if (getRelative(d) == CellState.FREE)
+                {
+                    secondary_dir = d;
+                    setNextMoveDir((Vector3Int)secondary_dir);
+                    return;
+                }
+            }
+        }
         foreach (var d in GetCompatibleDirs(last_move))
         {
             if (getRelative(d) == CellState.FREE)
             {
+                secondary_dir = null;
                 dir = d;
-                setNextMoveDir(dir);
+                setNextMoveDir((Vector3Int)dir);
                 return;
             }
         }
@@ -230,12 +251,8 @@ public class Robot
 
     public void Move()
     {
-        x = x_target;
-        y = y_target;
-        z = z_target;
+        position = target;
     }
-
-    public int x_target, y_target, z_target;
 
     public int settled_for = 0;
 
@@ -289,11 +306,11 @@ public class Algo : MonoBehaviour
         current_robot_field = new Robot[height, width, depth];
         foreach (Robot robot in r)
         {
-            if (current_robot_field[robot.x, robot.y, robot.z] == null)
+            if (current_robot_field[robot.position.x, robot.position.y, robot.position.z] == null)
             {
-                if (map[robot.x, robot.y, robot.z])
+                if (map[robot.position.x, robot.position.y, robot.position.z])
                 {
-                    current_robot_field[robot.x, robot.y, robot.z] = robot;
+                    current_robot_field[robot.position.x, robot.position.y, robot.position.z] = robot;
                 }
                 else
                 {
@@ -319,6 +336,7 @@ public class Algo : MonoBehaviour
     public string json_file_path;
 
     private bool[,,] map;
+    private int[,,] tav;
 
     int counter_dfs = 0;
     public int ticks_per_update = 50;
@@ -326,8 +344,40 @@ public class Algo : MonoBehaviour
     int time = 0;
     int ticks_since_last_update = 0;
 
-    private int start_x = 2, start_y = 2, start_z = 2;
+    private Vector3Int start_pos;
     JsonElement re;
+
+    void bfs()
+    {
+        tav = new int[height, width, depth];
+        for (int i = 0; i < height; i++)
+        {
+            for (int j = 0; j < width; j++)
+            {
+                for (int k = 0; k < depth; k++)
+                {
+                    tav[i, j, k] = int.MaxValue;
+                }
+            }
+        }
+        Queue<Vector3Int> q = new Queue<Vector3Int>();
+        tav[start_pos.x, start_pos.y, start_pos.z] = 0;
+        q.Enqueue(start_pos);
+        while(q.Count > 0)
+        {
+            Vector3Int v = q.Dequeue();
+            foreach(Vector3Int vv in new Vector3Int[]{ Vector3Int.up, Vector3Int.down, Vector3Int.back, Vector3Int.forward, Vector3Int.left, Vector3Int.right } ){
+                Vector3Int vvv = v + vv;
+                if (vvv.x < 0 || vvv.x >= height) continue;
+                if (vvv.y < 0 || vvv.y >= width) continue;
+                if (vvv.z < 0 || vvv.z >= depth) continue;
+                if (tav[vvv.x, vvv.y, vvv.z] != int.MaxValue) continue;
+                if (!map[vvv.x, vvv.y, vvv.z]) continue;
+                tav[vvv.x, vvv.y, vvv.z] = tav[v.x, v.y, v.z] + 1;
+                q.Enqueue(vvv);
+            }
+        }
+    }
 
     void DropdownValueChanged(TMPro.TMP_Dropdown dropdown)
     {
@@ -405,9 +455,8 @@ public class Algo : MonoBehaviour
         Vector3Int egyik = new Vector3Int(minx, miny, minz);
         Vector3Int masik = new Vector3Int(maxx, maxy, maxz);
         transform.SetLocalPositionAndRotation(-egyik - masik / 2 + egyik / 2, Quaternion.identity);
-        start_x = re.GetProperty("start").GetProperty("x").GetInt32();
-        start_y = re.GetProperty("start").GetProperty("y").GetInt32();
-        start_z = re.GetProperty("start").GetProperty("z").GetInt32();
+        start_pos = new Vector3Int(re.GetProperty("start").GetProperty("x").GetInt32(), re.GetProperty("start").GetProperty("y").GetInt32(), re.GetProperty("start").GetProperty("z").GetInt32());
+        bfs();
         r = new List<Robot>();
         GenerateRobotField();
     }
@@ -435,7 +484,7 @@ public class Algo : MonoBehaviour
                 json = r.ReadToEnd();
             }
             loadJson(json);
-        } catch(Exception ex)
+        } catch(Exception)
         {
             height = 0;
             width = 0;
@@ -453,17 +502,17 @@ public class Algo : MonoBehaviour
     }
     void FixedUpdate()
     {
-        if (ticks_since_last_update >= GameObject.Find("Speed slider").GetComponent<Slider>().value)
+        if (ticks_since_last_update >= GameObject.Find("Speed slider").GetComponent<UnityEngine.UI.Slider>().value)
         {
             foreach (Robot robot in r)
             {
                 if(robot.active)
-                    robot.LookCompute(generateNeighbours(robot.x, robot.y, robot.z));
+                    robot.LookCompute(generateNeighbours(robot.position.x, robot.position.y, robot.position.z), tav[robot.position.x, robot.position.y, robot.position.z]);
             }
 
-            if (current_robot_field[start_x, start_y, start_z] == null)
+            if (current_robot_field[start_pos.x, start_pos.y, start_pos.z] == null)
             {
-                r.Add(new Robot(start_x, start_y, start_z));
+                r.Add(new Robot(start_pos));
             }
 
             foreach (Robot robot in r)
@@ -492,7 +541,7 @@ public class Algo : MonoBehaviour
                         {
                             if (current_robot_field[x, y, z] == null)
                             {
-                                if (x == start_x && y == start_y && z == start_z)
+                                if (x == start_pos.x && y == start_pos.y && z == start_pos.z)
                                 {
                                     gameObjects[x, y, z].GetComponent<MeshRenderer>().material = start;
                                 }
