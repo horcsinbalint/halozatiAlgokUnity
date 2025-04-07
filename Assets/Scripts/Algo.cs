@@ -125,7 +125,6 @@ public class Robot
 
     private void initPrimary()
     {
-        Debug.Log("Initing primary");
         primary_dir = null;
         secondary_dir = null;
         foreach (var dir in all_directions())
@@ -134,7 +133,6 @@ public class Robot
             {
                 if (getRelative(dir) == CellState.FREE)
                 {
-                    Debug.Log($"{dir} {last_move}");
                     primary_dir = dir;
                     secondary_dir = sucDir((Vector3Int)primary_dir);
                     while (dot((Vector3Int)secondary_dir, kulso_irany) != 0)
@@ -144,7 +142,6 @@ public class Robot
                 }
             }
         }
-        Debug.Log("Could not initiate primary");
     }
 
     public void LookCompute(List<List<List<CellState>>> neighbours, List<List<List<CellState>>> neighbours2, int tav)
@@ -224,7 +221,6 @@ public class Robot
                                 neighbours[1][1][1] = CellState.OCCUPIED;
                                 if (can_traverse_now && !can_traverse_later)
                                 {
-                                    Debug.Log($"Cannot settle at {position.x} {position.y} {position.z} because it would remove path between {i} {j} {k} and {i2} {j2} {k2}");
                                     can_settle = false;
                                 }
                                 can_traverse_now = reachable(new Vector3Int(i, j, k), new Vector3Int(i2, j2, k2), neighbours2);
@@ -233,7 +229,6 @@ public class Robot
                                 neighbours2[1][1][1] = CellState.OCCUPIED;
                                 if (can_traverse_now && !can_traverse_later)
                                 {
-                                    Debug.Log($"Cannot settle at {position.x} {position.y} {position.z} because it would remove path between {i} {j} {k} and {i2} {j2} {k2} in 2D");
                                     can_settle = false;
                                 }
                             }
@@ -259,7 +254,6 @@ public class Robot
             }
             if (getRelative(-kulso_irany) == CellState.FREE && kulso_irany != last_move)
             {
-                Debug.Log($"Going down {-kulso_irany}");
                 setNextMoveDir(-kulso_irany);
                 return;
             }
@@ -413,7 +407,6 @@ public class Algo : MonoBehaviour
                 }
             }
         }
-        Debug.Log(dropdown.value.ToString());
         string json = "";
         switch (dropdown.value)
         {
