@@ -4,10 +4,6 @@ using UnityEngine;
 using System.Text.Json;
 using UnityEngine.Assertions;
 using System;
-using UnityEngine.UI;
-using TMPro;
-using UnityEngine.UIElements;
-using System.Linq;
 
 public enum CellState
 {
@@ -20,10 +16,11 @@ public class Robot
 {
     public Vector3Int position;
     public Vector3Int target;
-    private Vector3Int dir = new Vector3Int(1, 0, 0);
+    private Vector3Int kulso_irany = Vector3Int.up;
+    private Vector3Int? primary_dir = null;
     private Vector3Int? secondary_dir = null;
     bool ever_moved = false;
-    private Vector3Int last_move;
+    private Vector3Int last_move = Vector3Int.zero;
     private int active_for = 0;
 
     private Vector3Int[] all_directions()
@@ -65,6 +62,7 @@ public class Robot
 
     private void setNextMoveDir(Vector3Int rel_coords)
     {
+        ever_moved = true;
         target = position + rel_coords;
         last_move = rel_coords;
     }
@@ -120,9 +118,46 @@ public class Robot
         return reach[to.x, to.y, to.z];
     }
 
-    public void LookCompute(List<List<List<CellState>>> neighbours, int tav)
+    private int dot(Vector3Int v1, Vector3Int v2)
     {
+        return v1.x * v2.x + v1.y * v2.y + v1.z * v2.z;
+    }
+
+    private void initPrimary()
+    {
+        Debug.Log("Initing primary");
+        primary_dir = null;
+        secondary_dir = null;
+        foreach (var dir in all_directions())
+        {
+            if (dot(dir, kulso_irany) == 0 && dir != -last_move)
+            {
+                if (getRelative(dir) == CellState.FREE)
+                {
+                    Debug.Log($"{dir} {last_move}");
+                    primary_dir = dir;
+                    secondary_dir = sucDir((Vector3Int)primary_dir);
+                    while (dot((Vector3Int)secondary_dir, kulso_irany) != 0)
+                    {
+                        secondary_dir = sucDir((Vector3Int)secondary_dir);
+                    }
+                }
+            }
+        }
+        Debug.Log("Could not initiate primary");
+    }
+
+    public void LookCompute(List<List<List<CellState>>> neighbours, List<List<List<CellState>>> neighbours2, int tav)
+    {
+        neighbours_tmp = neighbours;
         active_for++;
+        if (kulso_irany * -1 != last_move && getRelative(kulso_irany) != CellState.WALL)
+        {
+            primary_dir = null;
+            secondary_dir = null;
+            setNextMoveDir(kulso_irany);
+            return;
+        }
         neighbours_tmp = neighbours;
         bool block_all = true;
         foreach (var dir in all_directions())
@@ -137,115 +172,99 @@ public class Robot
             active = false;
             return;
         }
-        if (!ever_moved)
+        if (primary_dir == null)
         {
-            for (int i=0;i<6; i++)
+            initPrimary();
+            if(primary_dir != null)
             {
-                if (getRelative(dir) == CellState.FREE)
-                {
-                    setNextMoveDir(dir);
-                    ever_moved = true;
-                    return;
-                }
-                dir = sucDir(dir);
+                setNextMoveDir((Vector3Int)primary_dir);
+                return;
             }
         }
-
-        int sarok_count_neighbs = (getRelative(Vector3Int.up) == CellState.WALL || getRelative(Vector3Int.down) == CellState.WALL ? 1 : 0) +
-            (getRelative(Vector3Int.left) == CellState.WALL || getRelative(Vector3Int.right) == CellState.WALL ? 1 : 0) +
-            (getRelative(Vector3Int.back) == CellState.WALL || getRelative(Vector3Int.forward) == CellState.WALL ? 1 : 0);
-        //Debug.Log($"sarok_count_neighbs for {x} {y} {z}: {sarok_count_neighbs}");
-        if (sarok_count_neighbs == 3 &&
-            (getRelative(Vector3Int.up) == CellState.WALL ? 1 : 0) + (getRelative(Vector3Int.down) == CellState.WALL ? 1 : 0) +
-            (getRelative(Vector3Int.left) == CellState.WALL ? 1 : 0) + (getRelative(Vector3Int.right) == CellState.WALL ? 1 : 0) +
-            (getRelative(Vector3Int.back) == CellState.WALL ? 1 : 0) + (getRelative(Vector3Int.forward) == CellState.WALL ? 1 : 0) >= 4)
+        if (primary_dir != null)
         {
-            bool can_settle = true;
-            //Trying to settle
-            for(int i = 0; i <= 2; i++)
+            if (getRelative((Vector3Int)primary_dir) == CellState.FREE)
             {
-                for (int j = 0; j <= 2; j++)
+                setNextMoveDir((Vector3Int)primary_dir);
+                return;
+            }
+            if (getRelative((Vector3Int)secondary_dir) == CellState.FREE)
+            {
+                setNextMoveDir((Vector3Int)secondary_dir);
+                return;
+            }
+        }
+        bool can_settle = ever_moved;
+        for (int i = 0; i <= 2; i++)
+        {
+            for (int j = 0; j <= 2; j++)
+            {
+                neighbours2[i][0][j] = CellState.WALL;
+                neighbours2[i][2][j] = CellState.WALL;
+            }
+        }
+        //Trying to settle
+        for (int i = 0; i <= 2; i++)
+        {
+            for (int j = 0; j <= 2; j++)
+            {
+                for (int k = 0; k <= 2; k++)
                 {
-                    for (int k = 0; k <= 2; k++)
+                    for (int i2 = 0; i2 <= 2; i2++)
                     {
-                        for (int i2 = 0; i2 <= 2; i2++)
+                        for (int j2 = 0; j2 <= 2; j2++)
                         {
-                            for (int j2 = 0; j2 <= 2; j2++)
+                            for (int k2 = 0; k2 <= 2; k2++)
                             {
-                                for (int k2 = 0; k2 <= 2; k2++)
+                                if (i == 1 && j == 1 && k == 1) continue;
+                                if (i2 == 1 && j2 == 1 && k2 == 1) continue;
+                                bool can_traverse_now = reachable(new Vector3Int(i, j, k), new Vector3Int(i2, j2, k2), neighbours);
+                                neighbours[1][1][1] = CellState.WALL;
+                                bool can_traverse_later = reachable(new Vector3Int(i, j, k), new Vector3Int(i2, j2, k2), neighbours);
+                                neighbours[1][1][1] = CellState.OCCUPIED;
+                                if (can_traverse_now && !can_traverse_later)
                                 {
-                                    if (i == 1 && j == 1 && k == 1) continue;
-                                    if (i2 == 1 && j2 == 1 && k2 == 1) continue;
-                                    bool can_traverse_now = reachable(new Vector3Int(i, j, k), new Vector3Int(i2, j2, k2), neighbours);
-                                    neighbours[1][1][1] = CellState.WALL;
-                                    bool can_traverse_later = reachable(new Vector3Int(i, j, k), new Vector3Int(i2, j2, k2), neighbours);
-                                    neighbours[1][1][1] = CellState.OCCUPIED;
-                                    if(can_traverse_now && ! can_traverse_later)
-                                    {
-                                        //Debug.Log($"Cannot settle at {x} {y} {z} because it would remove path between {i} {j} {k} and {i2} {j2} {k2}");
-                                        can_settle = false;
-                                    }
+                                    Debug.Log($"Cannot settle at {position.x} {position.y} {position.z} because it would remove path between {i} {j} {k} and {i2} {j2} {k2}");
+                                    can_settle = false;
+                                }
+                                can_traverse_now = reachable(new Vector3Int(i, j, k), new Vector3Int(i2, j2, k2), neighbours2);
+                                neighbours2[1][1][1] = CellState.WALL;
+                                can_traverse_later = reachable(new Vector3Int(i, j, k), new Vector3Int(i2, j2, k2), neighbours2);
+                                neighbours2[1][1][1] = CellState.OCCUPIED;
+                                if (can_traverse_now && !can_traverse_later)
+                                {
+                                    Debug.Log($"Cannot settle at {position.x} {position.y} {position.z} because it would remove path between {i} {j} {k} and {i2} {j2} {k2} in 2D");
+                                    can_settle = false;
                                 }
                             }
                         }
                     }
                 }
             }
-            if (can_settle)
-            {
-                if(active_for != tav+1)
-                    Debug.LogError($"Settling at: {position} after {active_for} ticks of being active. The cell is {tav} blocks from the start.");
-                active = false;
-                return;
-            }
         }
-        if (getRelative(dir) == CellState.FREE)
+
+        if (can_settle)
         {
-            setNextMoveDir(dir);
+            if(active_for != tav+1)
+                Debug.LogError($"Settling at: {position} after {active_for} ticks of being active. The cell is {tav} blocks from the start.");
+            active = false;
             return;
-        }
-        if(secondary_dir != null)
-        {
-            if (getRelative((Vector3Int)secondary_dir) == CellState.FREE)
-            {
-                setNextMoveDir((Vector3Int)secondary_dir);
-                return;
-            } else
-            {
-                foreach (var d in GetCompatibleDirs(last_move))
-                {
-                    if (d * secondary_dir == Vector3Int.zero && d * dir == Vector3Int.zero && getRelative(d) == CellState.FREE)
-                    {
-                        secondary_dir = null;
-                        dir = d;
-                        setNextMoveDir((Vector3Int)dir);
-                        return;
-                    }
-                }
-            }
         } else
         {
-            foreach (var d in GetCompatibleDirs(dir))
+            initPrimary();
+            if (primary_dir != null)
             {
-                if (getRelative(d) == CellState.FREE)
-                {
-                    secondary_dir = d;
-                    setNextMoveDir((Vector3Int)secondary_dir);
-                    return;
-                }
+                setNextMoveDir((Vector3Int)primary_dir);
+                return;
             }
-        }
-        foreach (var d in GetCompatibleDirs(last_move))
-        {
-            if (getRelative(d) == CellState.FREE)
+            if (getRelative(-kulso_irany) == CellState.FREE && kulso_irany != last_move)
             {
-                secondary_dir = null;
-                dir = d;
-                setNextMoveDir((Vector3Int)dir);
+                Debug.Log($"Going down {-kulso_irany}");
+                setNextMoveDir(-kulso_irany);
                 return;
             }
         }
-        Debug.LogError($"Could not decide on a correct new direction Last move: {last_move} Compatbile dirs {string.Join(",", GetCompatibleDirs(last_move))}");
+            Debug.LogError($"Could not decide on a correct new direction Last move: {last_move} Compatbile dirs {string.Join(",", GetCompatibleDirs(last_move))}");
         Assert.IsTrue(false);
     }
 
@@ -507,7 +526,7 @@ public class Algo : MonoBehaviour
             foreach (Robot robot in r)
             {
                 if(robot.active)
-                    robot.LookCompute(generateNeighbours(robot.position.x, robot.position.y, robot.position.z), tav[robot.position.x, robot.position.y, robot.position.z]);
+                    robot.LookCompute(generateNeighbours(robot.position.x, robot.position.y, robot.position.z), generateNeighbours(robot.position.x, robot.position.y, robot.position.z), tav[robot.position.x, robot.position.y, robot.position.z]);
             }
 
             if (current_robot_field[start_pos.x, start_pos.y, start_pos.z] == null)
